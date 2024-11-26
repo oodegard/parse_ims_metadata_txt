@@ -193,6 +193,7 @@ func processDirectory(dirPath string) {
 	fmt.Printf("Moved %d files.\n", movedFiles)
 }
 
+/*
 func main() {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -224,3 +225,4 @@ func main() {
 		processDirectory(dirPath)
 	}
 }
+*/
