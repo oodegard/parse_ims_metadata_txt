@@ -1,4 +1,4 @@
-package main
+package parse_ims_metadata_txt
 
 import (
 	"bufio"
