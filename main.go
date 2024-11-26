@@ -5,12 +5,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var bom = []byte{0xef, 0xbb, 0xbf}
+//var bom = []byte{0xef, 0xbb, 0xbf}
 
 func ParseImsMetadatatxt(filePath string) map[string]interface{} {
 	file, err := os.Open(filePath)
@@ -110,6 +109,7 @@ func fixDictKeys(d map[string]interface{}) map[string]interface{} {
 	return newDict
 }
 
+/*
 func processDirectory(dirPath string) {
 	files, _ := os.ReadDir(dirPath)
 
@@ -193,7 +193,7 @@ func processDirectory(dirPath string) {
 	fmt.Printf("Moved %d files.\n", movedFiles)
 }
 
-/*
+
 func main() {
 	reader := bufio.NewReader(os.Stdin)
 
