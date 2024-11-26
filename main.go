@@ -17,6 +17,7 @@ func ParseImsMetadatatxt(filePath string) map[string]interface{} {
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 	}
+
 	defer file.Close()
 
 	// Open UTF-8 BOM files correctly
