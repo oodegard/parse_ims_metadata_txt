@@ -27,7 +27,7 @@ func GetAllMetadata(filePath string) (map[string]interface{}, error) {
 	cleanedContent = removeBrackets(cleanedContent)             // Update cleanedContent with the clean version from removeBrackets
 	cleanedContent = fixFeatureValueListStrings(cleanedContent) // New function call
 
-	fmt.Printf("cleanedContent: %v\n", cleanedContent)
+	//fmt.Printf("cleanedContent: %v\n", cleanedContent)
 
 	return cleanedContent, nil
 }
