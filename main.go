@@ -2,227 +2,419 @@ package parse_ims_metadata_txt
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
-	"strconv"
+	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 )
 
-//var bom = []byte{0xef, 0xbb, 0xbf}
+func GetAllMetadata(filePath string) (map[string]interface{}, error) {
+	// (code omitted for brevity: import statements, etc.)
 
-func ParseImsMetadatatxt(filePath string) map[string]interface{} {
-	file, err := os.Open(filePath)
+	content, err := readFile(filePath)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	defer file.Close()
-
-	// Open UTF-8 BOM files correctly
-	reader := bufio.NewReader(file)
-	bom, _ := reader.Peek(3)
-	if bytes.Equal(bom, []byte{0xEF, 0xBB, 0xBF}) {
-		reader.Discard(3)
+	parsedContent, err := parseContent(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse content: %w", err)
 	}
 
-	scanner := bufio.NewScanner(reader)
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
+	cleanedContent := cleanIDStrings(parsedContent)
+	cleanedContent = removeBrackets(cleanedContent)             // Update cleanedContent with the clean version from removeBrackets
+	cleanedContent = fixFeatureValueListStrings(cleanedContent) // New function call
 
-	metadata := make(map[string]interface{})
-	for i, line := range lines {
-		if strings.Contains(line, "=") {
-			var key, value string
-			if strings.Contains(line, "DisplayName=") {
-				pairs := strings.Split(line, ", ")
-				key = strings.Split(pairs[0], "=")[1] + " |" + strconv.Itoa(i)
-				value = strings.Split(pairs[1], "=")[1]
-				value = strings.Split(value, "}")[0]
-			} else {
-				parts := strings.SplitN(line, "=", 2)
-				key = strings.TrimSpace(parts[0]) + " |" + strconv.Itoa(i)
-				value = strings.TrimSpace(parts[1])
-				value = strings.ReplaceAll(value, " ", "")
-				value = strings.ReplaceAll(value, "\"", "")
-			}
+	fmt.Printf("cleanedContent: %v\n", cleanedContent)
 
-			path := []string{}
-			tabCountLine := strings.Count(line, "\t")
-			nextPathTabs := tabCountLine - 1
-			for j := i - 1; j >= 0; j-- {
-				tabCountPrevLine := strings.Count(lines[j], "\t")
-				if strings.Contains(lines[j], "[") && tabCountPrevLine == nextPathTabs {
-					newpath := strings.TrimSpace(lines[j])
-					path = append([]string{newpath + " |" + fmt.Sprint(j)}, path...)
-					nextPathTabs--
-				}
-			}
-
-			currentDict := metadata
-			for _, p := range path {
-				p = strings.ReplaceAll(p, "[", "")
-				p = strings.ReplaceAll(p, "]", "")
-				if _, ok := currentDict[p]; !ok {
-					currentDict[p] = make(map[string]interface{})
-				}
-				currentDict = currentDict[p].(map[string]interface{})
-			}
-			currentDict[key] = value
-		}
-	}
-	metadata = fixDictKeys(metadata)
-	return metadata
+	return cleanedContent, nil
 }
 
-func fixDictKeys(d map[string]interface{}) map[string]interface{} {
-	keyCounts := make(map[string]int)
-	keyTotals := make(map[string]int)
-	newDict := make(map[string]interface{})
-
-	for key := range d {
-		baseKey := strings.Split(key, " |")[0]
-		keyTotals[baseKey]++
+func MakeYaml(filePath string, outputPath string) error {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get all metadata: %w", err)
 	}
 
-	for key, value := range d {
-		baseKey := strings.Split(key, " |")[0]
-		keyCounts[baseKey]++
+	err = writeYAML(outputPath, cleanedContent)
+	if err != nil {
+		return fmt.Errorf("failed to write YAML file: %w", err)
+	}
 
-		var newKey string
-		if keyTotals[baseKey] > 1 {
-			newKey = fmt.Sprintf("%s {%d}", baseKey, keyCounts[baseKey])
-		} else {
-			newKey = baseKey
+	fmt.Println("YAML file created successfully.")
+	return nil
+}
+
+// Functions to retrieve values from cleanedContent
+// Extract values (used for debugging or further processing)
+/*
+	protocol_name := cleanedContent["Protocol Name"]
+	Height := cleanedContent["Height"]
+	fmt.Printf("Height: %v\n", Height)
+	Width := cleanedContent["Width"]
+	fmt.Printf("Width: %v\n", Width)
+	NumberOfChannels := cleanedContent["NumberOfChannels"]
+	fmt.Printf("NumberOfChannels: %v\n", NumberOfChannels)
+	NumberOfTimePoints := cleanedContent["NumberOfTimePoints"]
+	fmt.Printf("NumberOfTimePoints: %v\n", NumberOfTimePoints)
+	NumberOfZPoints := cleanedContent["NumberOfZPoints"]
+	fmt.Printf("NumberOfZPoints: %v\n", NumberOfZPoints)
+	// Replace Wizard with updated logic
+	fmt.Printf("protocol_name: %v\n", protocol_name)
+*/
+func GetProtocolName(filePath string) (string, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	protocolName, ok := cleanedContent["Protocol Name"]
+	if !ok {
+		return "", fmt.Errorf("protocol name not found in metadata")
+	}
+
+	protocolNameStr, ok := protocolName.(string)
+	if !ok {
+		return "", fmt.Errorf("protocol name is not a string")
+	}
+
+	return protocolNameStr, nil
+}
+
+func GetHeight(filePath string) (int, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	height, ok := cleanedContent["Height"]
+	if !ok {
+		return 0, fmt.Errorf("height not found in metadata")
+	}
+
+	heightInt, ok := height.(int)
+	if !ok {
+		return 0, fmt.Errorf("height is not an int")
+	}
+
+	return heightInt, nil
+}
+
+func GetWidth(filePath string) (int, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	width, ok := cleanedContent["Width"]
+	if !ok {
+		return 0, fmt.Errorf("width not found in metadata")
+	}
+
+	widthInt, ok := width.(int)
+	if !ok {
+		return 0, fmt.Errorf("width is not an int")
+	}
+
+	return widthInt, nil
+}
+
+func GetNumberOfChannels(filePath string) (int, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	numChannels, ok := cleanedContent["NumberOfChannels"]
+	if !ok {
+		return 0, fmt.Errorf("number of channels not found in metadata")
+	}
+
+	numChannelsInt, ok := numChannels.(int)
+	if !ok {
+		return 0, fmt.Errorf("number of channels is not an int")
+	}
+
+	return numChannelsInt, nil
+}
+
+func GetNumberOfTimePoints(filePath string) (int, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	numTimePoints, ok := cleanedContent["NumberOfTimePoints"]
+	if !ok {
+		return 0, fmt.Errorf("number of time points not found in metadata")
+	}
+
+	numTimePointsInt, ok := numTimePoints.(int)
+	if !ok {
+		return 0, fmt.Errorf("number of time points is not an int")
+	}
+
+	return numTimePointsInt, nil
+}
+
+func GetNumberOfZPoints(filePath string) (int, error) {
+	cleanedContent, err := GetAllMetadata(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get all metadata: %w", err)
+	}
+
+	numZPoints, ok := cleanedContent["NumberOfZPoints"]
+	if !ok {
+		return 0, fmt.Errorf("number of Z points not found in metadata")
+	}
+
+	numZPointsInt, ok := numZPoints.(int)
+	if !ok {
+		return 0, fmt.Errorf("number of Z points is not an int")
+	}
+
+	return numZPointsInt, nil
+}
+
+func fixFeatureValueListStrings(data map[string]interface{}) map[string]interface{} {
+	fixedData := make(map[string]interface{})
+
+	for key, value := range data {
+		switch v := value.(type) {
+		case []interface{}:
+			var fixedList []interface{}
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					split := strings.SplitN(str, ", Value=", 2)
+					if len(split) == 2 {
+						cleanedKey := strings.TrimSpace(split[0])
+						cleanedValue := strings.TrimSpace(split[1])
+						fixedList = append(fixedList, map[string]interface{}{cleanedKey: cleanedValue})
+					} else {
+						fixedList = append(fixedList, item)
+					}
+				} else {
+					fixedList = append(fixedList, item)
+				}
+			}
+			fixedData[key] = fixedList
+		case map[string]interface{}:
+			fixedData[key] = fixFeatureValueListStrings(v)
+		default:
+			fixedData[key] = value
 		}
+	}
+
+	return fixedData
+}
+
+func removeBrackets(data map[string]interface{}) map[string]interface{} {
+	cleanedData := make(map[string]interface{}) // Create a new map to store cleaned data
+
+	for key, value := range data {
+		cleanedKey := trimBrackets(key) // Clean key brackets
 
 		switch v := value.(type) {
+		case string:
+			cleanedData[cleanedKey] = trimBrackets(v) // Clean string values
 		case map[string]interface{}:
-			newDict[newKey] = fixDictKeys(v)
-		default:
-			newDict[newKey] = value
-		}
-	}
-
-	return newDict
-}
-
-/*
-func processDirectory(dirPath string) {
-	files, _ := os.ReadDir(dirPath)
-
-	delPath := filepath.Join(dirPath, "del")
-	os.MkdirAll(delPath, os.ModePerm)
-
-	var protocolFiles, movedFiles, metadataFiles int
-	toMove := make(map[string]bool)
-
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), "_metadata.txt") {
-			metadataFiles++
-
-			metadata := ParseImsMetadatatxt(filepath.Join(dirPath, file.Name()))
-
-			// Write the YAML to a file (Removed for now)
-
-			// Convert the map to YAML
-			// y, err := yaml.Marshal(metadata)
-			// if err != nil {
-			// 	fmt.Printf("error: %v\n", err)
-			// }
-
-			// yaml_file_name := filepath.Join(dirPath, strings.TrimSuffix(file.Name(), ".txt")+".yaml")
-			// fmt.Printf("yaml_file_name: %v\n", yaml_file_name)
-
-			// err = os.WriteFile(yaml_file_name, y, 0644)
-			// if err != nil {
-			// 	fmt.Printf("error: %v\n", err)
-			// }
-
-			// Check if This image was aquired with
-			// Aquire button -> Protocol Specification
-			// Or by live/snap -> No Protocol Specification key
-			if _, ok := metadata["Protocol Specification"]; ok {
-				fmt.Printf("Keeping file: %v\n", file)
-				protocolFiles++
-			} else {
-				base := strings.TrimSuffix(file.Name(), "_metadata.txt")
-				toMove[base] = true
+			cleanedData[cleanedKey] = removeBrackets(v) // Recursively clean nested maps
+		case []interface{}:
+			cleanedList := make([]interface{}, len(v))
+			for i, item := range v {
+				switch item := item.(type) {
+				case string:
+					cleanedList[i] = trimBrackets(item)
+				case map[string]interface{}:
+					cleanedList[i] = removeBrackets(item) // Recursively clean nested maps in slices
+				default:
+					cleanedList[i] = item
+				}
 			}
-
-			// This is how it was done before the parser was made
-			// content, _ := os.ReadFile(filepath.Join(dirPath, file.Name()))
-
-			// // Check for and remove BOM
-			// content = bytes.TrimPrefix(content, bom)
-
-			// if strings.Contains(string(content), "Protocol Name=") {
-			// 	fmt.Printf("Keeping file: %v\n", file)
-			// 	protocolFiles++
-			// } else {
-			// 	base := strings.TrimSuffix(file.Name(), "_metadata.txt")
-			// 	toMove[base] = true
-			// }
-
-			// Extract essential metadata ans save to _processing_settings.yaml file
-
+			cleanedData[cleanedKey] = cleanedList // Update the cleaned list
+		default:
+			cleanedData[cleanedKey] = value // Preserve other types of values as-is
 		}
 	}
 
-	for _, file := range files {
-		base := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-		if toMove[base] {
-			oldPath := filepath.Join(dirPath, file.Name())
-			newPath := filepath.Join(delPath, file.Name())
-			os.Rename(oldPath, newPath)
-			fmt.Printf("Moved file: %s\n", file.Name())
-			movedFiles++
-
-			// Move the corresponding _metadata.txt file
-			metadataFile := base + "_metadata.txt"
-			oldMetadataPath := filepath.Join(dirPath, metadataFile)
-			newMetadataPath := filepath.Join(delPath, metadataFile)
-			os.Rename(oldMetadataPath, newMetadataPath)
-		}
-	}
-
-	fmt.Printf("Found %d _metadata.txt files.\n", metadataFiles)
-	fmt.Printf("Found %d files with 'Protocol Name='.\n", protocolFiles)
-	fmt.Printf("Moved %d files.\n", movedFiles)
+	return cleanedData // Return the cleaned map
 }
 
+func trimBrackets(s string) string {
+	s = strings.TrimSpace(s) // Let's trim space to handle cases with spaces outside brackets
+	if strings.HasPrefix(s, "[") || strings.HasSuffix(s, "]") {
+		s = strings.TrimPrefix(s, "[")
+		s = strings.TrimSuffix(s, "]")
+	}
+	if strings.HasPrefix(s, "{") || strings.HasSuffix(s, "}") {
+		s = strings.TrimPrefix(s, "{")
+		s = strings.TrimSuffix(s, "}")
+	}
+	if strings.HasPrefix(s, "(") || strings.HasSuffix(s, ")") {
+		s = strings.TrimPrefix(s, "(")
+		s = strings.TrimSuffix(s, ")")
+	}
+	return s
+}
+func readFile(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
 
-func main() {
-	reader := bufio.NewReader(os.Stdin)
+	var content strings.Builder
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		content.WriteString(scanner.Text() + "\n")
+	}
 
-	for {
-		fmt.Print("Enter dragonfly directory path: ")
-		fmt.Print("OR ENTER to exit (Not type any characters): ")
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
 
-		dirPath, _ := reader.ReadString('\n')
-		dirPath = strings.TrimSpace(dirPath) // Remove newline character
+	return content.String(), nil
+}
 
-		if dirPath == "" {
-			fmt.Println("No directory path provided. Exiting.")
-			return
-		}
+// parseContent parses the file content and puts every key-value pair in a list.
+func parseContent(content string) (map[string]interface{}, error) {
+	lines := strings.Split(content, "\n")
+	root := make(map[string]interface{})
+	stack := []map[string]interface{}{root}
+	indentStack := []int{0}
 
-		// If dirpath does not exist, continue to the next iteration
-		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-			fmt.Println("Directory path does not exist. Skipping.")
+	for _, line := range lines {
+		if line == "" {
 			continue
 		}
 
-		// Check if the input is enclosed in quotes
-		if (strings.HasPrefix(dirPath, "\"") && strings.HasSuffix(dirPath, "\"")) ||
-			(strings.HasPrefix(dirPath, "'") && strings.HasSuffix(dirPath, "'")) {
-			// Remove the quotes from the input
-			dirPath = dirPath[1 : len(dirPath)-1]
+		indentLevel, trimmedLine := countIndent(line)
+		for len(indentStack) > 0 && indentStack[len(indentStack)-1] >= indentLevel {
+			stack = stack[:len(stack)-1]
+			indentStack = indentStack[:len(indentStack)-1]
 		}
 
-		processDirectory(dirPath)
+		if len(stack) == 0 {
+			stack = append(stack, root)
+			indentStack = append(indentStack, 0)
+		}
+
+		current := stack[len(stack)-1]
+
+		if strings.HasPrefix(trimmedLine, "[") && strings.HasSuffix(trimmedLine, "]") {
+			sectionName := trimmedLine
+			newSection := make(map[string]interface{})
+			if _, exists := current[sectionName]; !exists {
+				current[sectionName] = []interface{}{}
+			}
+			current[sectionName] = append(current[sectionName].([]interface{}), newSection)
+			stack = append(stack, newSection)
+			indentStack = append(indentStack, indentLevel)
+		} else {
+			key, value := parseKeyValue(trimmedLine)
+			if _, exists := current[key]; !exists {
+				current[key] = []interface{}{}
+			}
+			current[key] = append(current[key].([]interface{}), value)
+		}
+	}
+
+	return root, nil
+}
+
+func countIndent(line string) (int, string) {
+	indentLevel := 0
+	for i := 0; i < len(line); i++ {
+		if line[i] != ' ' && line[i] != '\t' {
+			break
+		}
+		indentLevel++
+	}
+
+	return indentLevel, strings.TrimSpace(line)
+}
+
+func parseKeyValue(line string) (string, string) {
+	parts := strings.SplitN(line, "=", 2)
+	key := strings.TrimSpace(parts[0])
+	value := ""
+	if len(parts) > 1 {
+		value = strings.TrimSpace(parts[1])
+	}
+	return key, value
+}
+
+var numberSuffixRegex = regexp.MustCompile(`^(.*?)(\d+)$`)
+
+func cleanIDStrings(data map[string]interface{}) map[string]interface{} {
+	cleanedData := make(map[string]interface{})
+	for key, value := range data {
+		// Strip the number suffix for generic processing
+		baseKey := stripNumberSuffix(key)
+
+		// Clean nested maps
+		switch v := value.(type) {
+		case []interface{}:
+			if len(v) == 1 {
+				// If there's just one item in the list, store it directly
+				cleanedData[baseKey] = cleanValue(v[0])
+			} else {
+				// Otherwise, process each item in the list
+				var cleanedList []interface{}
+				for _, item := range v {
+					cleanedList = append(cleanedList, cleanValue(item))
+				}
+				cleanedData[baseKey] = cleanedList
+			}
+		default:
+			cleanedData[baseKey] = cleanValue(v)
+		}
+	}
+
+	// Simplify lists that contain only one map entry
+	for key, value := range cleanedData {
+		cleanedData[key] = simplifyList(value)
+	}
+
+	return cleanedData
+}
+
+func stripNumberSuffix(key string) string {
+	matches := numberSuffixRegex.FindStringSubmatch(key)
+	if len(matches) != 3 {
+		return key
+	}
+	return matches[1]
+}
+
+func cleanValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return cleanIDStrings(v)
+	default:
+		return value
 	}
 }
-*/
+
+func simplifyList(value interface{}) interface{} {
+	switch v := value.(type) {
+	case []interface{}:
+		if len(v) == 1 {
+			return v[0]
+		}
+		for i, item := range v {
+			v[i] = cleanValue(item)
+		}
+	}
+	return value
+}
+
+func writeYAML(outputPath string, data map[string]interface{}) error {
+	bytes, err := yaml.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(outputPath, bytes, 0644)
+}
