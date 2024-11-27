@@ -97,7 +97,7 @@ func GetHeight(filePath string) (interface{}, error) {
 	return height, nil
 }
 
-func GetWidth(filePath string) (int, error) {
+func GetWidth(filePath string) (interface{}, error) {
 	cleanedContent, err := GetAllMetadata(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get all metadata: %w", err)
@@ -108,15 +108,10 @@ func GetWidth(filePath string) (int, error) {
 		return 0, fmt.Errorf("width not found in metadata")
 	}
 
-	widthInt, ok := width.(int)
-	if !ok {
-		return 0, fmt.Errorf("width is not an int")
-	}
-
-	return widthInt, nil
+	return width, nil
 }
 
-func GetNumberOfChannels(filePath string) (int, error) {
+func GetNumberOfChannels(filePath string) (interface{}, error) {
 	cleanedContent, err := GetAllMetadata(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get all metadata: %w", err)
@@ -127,15 +122,10 @@ func GetNumberOfChannels(filePath string) (int, error) {
 		return 0, fmt.Errorf("number of channels not found in metadata")
 	}
 
-	numChannelsInt, ok := numChannels.(int)
-	if !ok {
-		return 0, fmt.Errorf("number of channels is not an int")
-	}
-
-	return numChannelsInt, nil
+	return numChannels, nil
 }
 
-func GetNumberOfTimePoints(filePath string) (int, error) {
+func GetNumberOfTimePoints(filePath string) (interface{}, error) {
 	cleanedContent, err := GetAllMetadata(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get all metadata: %w", err)
@@ -146,15 +136,10 @@ func GetNumberOfTimePoints(filePath string) (int, error) {
 		return 0, fmt.Errorf("number of time points not found in metadata")
 	}
 
-	numTimePointsInt, ok := numTimePoints.(int)
-	if !ok {
-		return 0, fmt.Errorf("number of time points is not an int")
-	}
-
-	return numTimePointsInt, nil
+	return numTimePoints, nil
 }
 
-func GetNumberOfZPoints(filePath string) (int, error) {
+func GetNumberOfZPoints(filePath string) (interface{}, error) {
 	cleanedContent, err := GetAllMetadata(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get all metadata: %w", err)
@@ -165,12 +150,7 @@ func GetNumberOfZPoints(filePath string) (int, error) {
 		return 0, fmt.Errorf("number of Z points not found in metadata")
 	}
 
-	numZPointsInt, ok := numZPoints.(int)
-	if !ok {
-		return 0, fmt.Errorf("number of Z points is not an int")
-	}
-
-	return numZPointsInt, nil
+	return numZPoints, nil
 }
 
 func fixFeatureValueListStrings(data map[string]interface{}) map[string]interface{} {
