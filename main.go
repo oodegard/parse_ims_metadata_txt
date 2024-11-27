@@ -83,7 +83,7 @@ func GetProtocolName(filePath string) (string, error) {
 	return protocolNameStr, nil
 }
 
-func GetHeight(filePath string) (int, error) {
+func GetHeight(filePath string) (interface{}, error) {
 	cleanedContent, err := GetAllMetadata(filePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get all metadata: %w", err)
@@ -94,12 +94,7 @@ func GetHeight(filePath string) (int, error) {
 		return 0, fmt.Errorf("height not found in metadata")
 	}
 
-	heightInt, ok := height.(int)
-	if !ok {
-		return 0, fmt.Errorf("height is not an int")
-	}
-
-	return heightInt, nil
+	return height, nil
 }
 
 func GetWidth(filePath string) (int, error) {
